@@ -3,13 +3,29 @@
 
 import { buildTeams, pointsFor, type Cat, type Entry, type TeamStat } from '../lib/compute';
 
-interface Boot { entries: Entry[]; unattributed: number; fetchedAt: string; scoring: Cat[] }
+interface Sync {
+  ok: boolean;
+  created: number;
+  updated: number;
+  columnsCreated: string[];
+  syncedAt: string | null;
+  error: string | null;
+}
+
+interface Boot {
+  entries: Entry[];
+  unattributed: number;
+  fetchedAt: string;
+  scoring: Cat[];
+  sync: Sync | null;
+}
 
 const boot: Boot = JSON.parse(document.getElementById('bootstrap')!.textContent!);
 let entries = boot.entries;
 let scoring = boot.scoring;
 let unattributed = boot.unattributed;
 let fetchedAt = boot.fetchedAt;
+let sync = boot.sync;
 let selectedTeam: string | null = null;
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
@@ -700,6 +716,43 @@ function renderAll(opts: { keepScoring?: boolean } = {}) {
 
 function stamp() {
   $('#fetched').textContent = `Airtable data as of ${new Date(fetchedAt).toLocaleTimeString()}`;
+  renderSync();
+}
+
+function renderSync() {
+  const banner = $('#sync-banner');
+  if (!sync) {
+    banner.replaceChildren();
+    return;
+  }
+
+  if (sync.ok) {
+    const wrote = sync.created + sync.updated;
+    const bits = [
+      `Wrote ${wrote} ${wrote === 1 ? 'team' : 'teams'} to the Airtable Points table`,
+      sync.created ? `${sync.created} created` : null,
+      sync.updated ? `${sync.updated} updated` : null,
+    ].filter(Boolean);
+    if (sync.columnsCreated.length) bits.push(`added columns: ${sync.columnsCreated.join(', ')}`);
+    banner.replaceChildren(
+      el('p', { class: 'sync-ok', text: `${bits.join(' · ')} at ${new Date(sync.syncedAt!).toLocaleTimeString()}` }),
+    );
+    return;
+  }
+
+  banner.replaceChildren(
+    el(
+      'div',
+      { class: 'banner' },
+      el('strong', { text: 'Could not write the Points table.' }),
+      el('div', { style: 'margin-top:6px', text: sync.error ?? 'Unknown error' }),
+      sync.columnsCreated.length
+        ? el('div', { style: 'margin-top:8px' },
+            el('span', { text: 'Columns added before the failure: ' }),
+            el('code', { text: sync.columnsCreated.join(', ') }))
+        : null,
+    ),
+  );
 }
 
 for (const btn of document.querySelectorAll<HTMLButtonElement>('.tab')) {
@@ -723,6 +776,7 @@ $('#refresh').addEventListener('click', async (ev) => {
     unattributed = data.unattributed;
     fetchedAt = data.fetchedAt;
     scoring = data.scoring;
+    sync = data.sync ?? null;
     renderAll();
     stamp();
   } catch (err) {

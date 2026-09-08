@@ -30,9 +30,20 @@ function connect(): DatabaseSync {
       PRIMARY KEY (category, option)
     );
   `);
+  // Added after the first release; both describe how the form presents the
+  // answer, so they are refreshed from the schema on every load.
+  addColumn(conn, 'option_points', 'sort', 'REAL NOT NULL DEFAULT 1e9');
+  addColumn(conn, 'option_points', 'offered', 'INTEGER NOT NULL DEFAULT 0');
   seed(conn);
   db = conn;
   return conn;
+}
+
+function addColumn(conn: DatabaseSync, table: string, column: string, decl: string) {
+  const cols = conn.prepare(`PRAGMA table_info(${table})`).all() as any[];
+  if (!cols.some((c) => c.name === column)) {
+    conn.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+  }
 }
 
 function seed(conn: DatabaseSync) {
@@ -40,11 +51,11 @@ function seed(conn: DatabaseSync) {
     'INSERT INTO category_settings (category, weight, enabled) VALUES (?, 1, 1) ON CONFLICT(category) DO NOTHING',
   );
   const opt = conn.prepare(
-    'INSERT INTO option_points (category, option, points) VALUES (?, ?, ?) ON CONFLICT(category, option) DO NOTHING',
+    'INSERT INTO option_points (category, option, points, sort) VALUES (?, ?, ?, ?) ON CONFLICT(category, option) DO NOTHING',
   );
   for (const c of CATEGORIES) {
     cat.run(c.name);
-    for (const o of c.options) opt.run(c.name, o.value, o.points);
+    c.options.forEach((o, i) => opt.run(c.name, o.value, o.points, i));
   }
 }
 
@@ -59,6 +70,48 @@ export function ensureOptions(seen: Map<string, Set<string>>) {
     'INSERT INTO option_points (category, option, points) VALUES (?, ?, 0) ON CONFLICT(category, option) DO NOTHING',
   );
   for (const [category, values] of seen) for (const v of values) stmt.run(category, v);
+}
+
+/**
+ * Reconcile the stored options with the form's real answer lists.
+ *
+ * Airtable's single-select choices are the source of truth: answers it offers
+ * are added (keeping any default we know a value for), and stored options the
+ * form no longer offers are dropped - unless a past entry still uses one, in
+ * which case removing it would silently change that entry's score.
+ */
+export function syncOptionsFromSchema(
+  choices: Map<string, string[]>,
+  stillInUse: Map<string, Set<string>>,
+) {
+  const conn = connect();
+  const insert = conn.prepare(
+    'INSERT INTO option_points (category, option, points, sort, offered) VALUES (?, ?, ?, ?, 1) ON CONFLICT(category, option) DO UPDATE SET sort = excluded.sort, offered = 1',
+  );
+  const unoffer = conn.prepare(
+    'UPDATE option_points SET offered = 0, sort = 1e6 WHERE category = ? AND option = ?',
+  );
+  const drop = conn.prepare('DELETE FROM option_points WHERE category = ? AND option = ?');
+
+  for (const [category, offered] of choices) {
+    const defaults = CATEGORIES.find((c) => c.name === category)?.options ?? [];
+    offered.forEach((value, i) =>
+      insert.run(category, value, defaults.find((o) => o.value === value)?.points ?? 0, i),
+    );
+
+    const keep = new Set(offered);
+    const used = stillInUse.get(category) ?? new Set<string>();
+    const stored = conn
+      .prepare('SELECT option FROM option_points WHERE category = ?')
+      .all(category) as any[];
+    for (const row of stored) {
+      if (keep.has(row.option)) continue;
+      // An answer the form dropped but past entries still use has to keep its
+      // points, or those entries would silently change score.
+      if (used.has(row.option)) unoffer.run(category, row.option);
+      else drop.run(category, row.option);
+    }
+  }
 }
 
 export interface ScoringOption {
@@ -82,20 +135,14 @@ export function readScoring(): ScoringCategory[] {
       (r) => [r.category as string, r],
     ),
   );
-  const points = conn.prepare('SELECT category, option, points FROM option_points').all() as any[];
+  const points = conn
+    .prepare('SELECT category, option, points, sort, offered FROM option_points ORDER BY sort, option')
+    .all() as any[];
 
   return CATEGORIES.map((c) => {
     const row = settings.get(c.name);
     const rows = points.filter((p) => p.category === c.name);
-    const order = c.options.map((o) => o.value);
-    rows.sort((a, b) => {
-      const ia = order.indexOf(a.option);
-      const ib = order.indexOf(b.option);
-      if (ia !== -1 && ib !== -1) return ia - ib;
-      if (ia !== -1) return -1;
-      if (ib !== -1) return 1;
-      return a.option.localeCompare(b.option);
-    });
+    // Already ordered by the form's own choice order via `sort`.
     return {
       name: c.name,
       kind: c.kind,
@@ -104,12 +151,14 @@ export function readScoring(): ScoringCategory[] {
       weight: row ? Number(row.weight) : 1,
       enabled: row ? Boolean(row.enabled) : true,
       options: rows.map((p) => {
-        const known = c.options.find((o) => o.value === p.option);
+        const preset = c.options.find((o) => o.value === p.option);
         return {
           value: p.option as string,
-          label: known?.label ?? (p.option as string),
+          label: preset?.label ?? (p.option as string),
           points: Number(p.points),
-          known: Boolean(known),
+          // Drives the "new in data" flag: an answer the form still offers is
+          // not new, whether or not we shipped a default for it.
+          known: Boolean(preset) || Boolean(p.offered),
         };
       }),
     };

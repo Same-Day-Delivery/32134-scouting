@@ -94,14 +94,9 @@ function normalise(records: AirtableRecord[]): EntrySet {
   return { entries, unattributed, fetchedAt: new Date().toISOString() };
 }
 
-let cache: { data: EntrySet; at: number } | undefined;
-const TTL_MS = 60_000;
-
-export async function getEntries(force = false): Promise<EntrySet> {
-  if (!force && cache && Date.now() - cache.at < TTL_MS) return cache.data;
-  const data = normalise(await fetchRecords());
-  cache = { data, at: Date.now() };
-  return data;
+/** Reads the form responses fresh. Called once each time the site is opened. */
+export async function getEntries(): Promise<EntrySet> {
+  return normalise(await fetchRecords());
 }
 
 /** Every distinct answer present in the live data, per category. */

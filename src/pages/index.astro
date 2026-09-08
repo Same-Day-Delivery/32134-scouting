@@ -1,6 +1,5 @@
 ---
-import { getEntries, observedOptions } from '../lib/airtable';
-import { ensureOptions, readScoring } from '../lib/db';
+import { loadDashboard } from '../lib/load';
 import '../styles/dashboard.css';
 
 export const prerender = false;
@@ -8,10 +7,10 @@ export const prerender = false;
 let boot: any = null;
 let error: string | null = null;
 
+// Opening the site reads the form responses, recalculates every team's points,
+// and writes the results back to the Airtable "Points" table.
 try {
-  const data = await getEntries();
-  ensureOptions(observedOptions(data.entries));
-  boot = { ...data, scoring: readScoring() };
+  boot = await loadDashboard();
 } catch (err) {
   error = err instanceof Error ? err.message : String(err);
 }
@@ -49,6 +48,7 @@ try {
         </div>
       ) : (
         <>
+          <div id="sync-banner"></div>
           <div id="tiles" class="tiles"></div>
 
           <div class="tabs" role="tablist">
@@ -81,7 +81,8 @@ try {
                 <h2 class="card-title">Point values</h2>
                 <p class="card-sub" style="margin:4px 0 0">
                   Edits apply to every ranking immediately and are saved to the local SQLite database
-                  (<code>data/scouting.db</code>) — the Airtable token is read-only for now.
+                  (<code>data/scouting.db</code>). Reload the page to write the recalculated totals
+                  back to the Airtable <code>Points</code> table.
                 </p>
               </div>
               <div style="display:flex;gap:10px;align-items:center">

@@ -14,6 +14,11 @@ export interface CategoryDef {
   /** Categorical palette slot (1-8), stable across every view. */
   slot: number;
   blurb: string;
+  /**
+   * Column in the Points table this category writes to. Matched against the
+   * real columns case-insensitively, and created if it is not there.
+   */
+  pointsField: string;
   options: { value: string; label?: string; points: number }[];
 }
 
@@ -23,8 +28,8 @@ export const CATEGORIES: CategoryDef[] = [
     kind: 'choice',
     slot: 1,
     blurb: 'What the robot managed during the autonomous period.',
+    pointsField: 'Auto Points',
     options: [
-      { value: 'Doesnt move in Auto', points: 0 },
       { value: 'Moves in Auto', points: 5 },
       { value: 'Scores in Auto', points: 12 },
       { value: 'Scores Hella in Auto', points: 20 },
@@ -35,6 +40,7 @@ export const CATEGORIES: CategoryDef[] = [
     kind: 'choice',
     slot: 2,
     blurb: 'Driver-controlled scoring output.',
+    pointsField: 'Teleop Points',
     options: [
       { value: 'Cant Score', points: 0 },
       { value: 'Scores some', points: 8 },
@@ -47,6 +53,7 @@ export const CATEGORIES: CategoryDef[] = [
     kind: 'choice',
     slot: 3,
     blurb: 'Climb capability at the end of the match.',
+    pointsField: 'Endgame Points',
     options: [
       { value: 'Cant climb', points: 0 },
       { value: 'Can Climb', points: 15 },
@@ -58,6 +65,7 @@ export const CATEGORIES: CategoryDef[] = [
     kind: 'choice',
     slot: 4,
     blurb: 'Fouls given away. Negative values subtract from the total.',
+    pointsField: 'Penalty Points',
     options: [
       { value: 'No fouls/penalties', points: 0 },
       { value: '1 foul/penalty', points: -3 },
@@ -69,11 +77,20 @@ export const CATEGORIES: CategoryDef[] = [
     name: 'Broken Bot',
     kind: 'boolean',
     slot: 5,
+    pointsField: 'Broken Bot Points',
     blurb: 'Airtable omits unchecked boxes, so a missing value counts as "not broken".',
     options: [
       { value: 'false', label: 'Not broken', points: 0 },
       { value: 'true', label: 'Broken', points: -20 },
     ],
+  },
+  {
+    name: 'Defense',
+    kind: 'choice',
+    slot: 6,
+    blurb: 'Added to the form recently. Its answers appear here as scouts start using it.',
+    pointsField: 'Defense Points',
+    options: [],
   },
 ];
 

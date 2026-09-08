@@ -10,13 +10,17 @@ npm install
 npm run dev        # http://localhost:4321
 ```
 
-`.env` needs (the table name contains a space):
+`.env` needs:
 
 ```
 AIRTABLE_ACCESS_TOKEN=pat...
 AIRTABLE_BASE_ID=app...
-AIRTABLE_TABLE_NAME=Table 1
+AIRTABLE_TABLE_NAME=Data         # scouting form responses, read
+AIRTABLE_TABLE_NAME_2=Points     # calculated team stats, written
 ```
+
+The token needs `data.records:read`, `data.records:write`, `schema.bases:read`
+and `schema.bases:write`.
 
 ## Tabs
 
@@ -26,6 +30,31 @@ AIRTABLE_TABLE_NAME=Table 1
 | **Categories** | One ranked chart per category, plus how many entries recorded it. |
 | **Scoring** | The point value of every answer, a per-category weight, and a toggle to leave a category out of the total. Edits re-rank everything immediately. |
 | **Team** | One team's category averages and every individual form entry — answers, points, alliance, broken-bot flag and notes. |
+
+## What happens when you open the site
+
+Each page load runs the whole pipeline once — there is no polling or background
+refresh:
+
+1. Read the base schema, so the answer lists and column names come from
+   Airtable rather than from assumptions in this repo.
+2. Read every response from `Data`.
+3. Recalculate each team's per-category averages and total.
+4. Create or update one row per team in `Points`, matched on `Team Number`.
+
+The result is reported above the stat tiles.
+
+Columns are matched against the table case-insensitively, so the existing
+`Teleop points` is used rather than a duplicate `Teleop Points` being made. Only
+genuinely absent columns are created — `Rank`, `Total Points`, `Defense Points`,
+`Entries` and `Last Synced` were added this way. A category no one recorded for
+a team is written as empty rather than `0`, so the table keeps "no data"
+distinct from "scored zero".
+
+Adding a single-select answer to the form makes it appear in the Scoring tab at
+0 points, in the order Airtable lists it. Removing one deletes it here too —
+unless an existing entry still uses it, in which case its points are kept so
+that entry's score does not silently change.
 
 ## How scores are calculated
 
@@ -45,13 +74,13 @@ Two consequences worth knowing:
 ## Where the points are stored
 
 Point values, weights and enable flags live in a local SQLite database at
-`data/scouting.db` (created on first run, git-ignored), because the current
-Airtable token is read-only. It uses Node's built-in `node:sqlite`, so there is
+`data/scouting.db` (created on first run, git-ignored). The calculated results
+go to Airtable; the scoring rules that produce them stay local. It uses Node's built-in `node:sqlite`, so there is
 no database dependency to install.
 
-To move this to Airtable later, reimplement `readScoring`, `setOptionPoints` and
-`setCategorySettings` in [src/lib/db.ts](src/lib/db.ts) — nothing else reads the
-database.
+To move the rules to Airtable too, reimplement `readScoring`, `setOptionPoints`
+and `setCategorySettings` in [src/lib/db.ts](src/lib/db.ts) — nothing else reads
+the database.
 
 ## Layout
 
@@ -59,6 +88,9 @@ database.
 src/
 ├── lib/
 │   ├── airtable.ts        fetch + normalise form responses
+│   ├── airtable-schema.ts  read the base schema (answer lists, columns)
+│   ├── load.ts            the read -> calculate -> write pipeline
+│   ├── points-table.ts    write calculated stats back to Airtable
 │   ├── compute.ts         ranking maths (shared with the browser)
 │   ├── db.ts              local SQLite scoring store
 │   └── scoring-config.ts  categories and their default point values

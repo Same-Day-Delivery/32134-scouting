@@ -1,14 +1,11 @@
 import type { APIRoute } from 'astro';
-import { getEntries, observedOptions } from '../../lib/airtable';
-import { ensureOptions, readScoring } from '../../lib/db';
+import { loadDashboard } from '../../lib/load';
 
 export const prerender = false;
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = async () => {
   try {
-    const data = await getEntries(url.searchParams.get('refresh') === '1');
-    ensureOptions(observedOptions(data.entries));
-    return new Response(JSON.stringify({ ...data, scoring: readScoring() }), {
+    return new Response(JSON.stringify(await loadDashboard()), {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
