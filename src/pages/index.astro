@@ -1,17 +1,110 @@
 ---
+import { getEntries, observedOptions } from '../lib/airtable';
+import { ensureOptions, readScoring } from '../lib/db';
+import '../styles/dashboard.css';
 
+export const prerender = false;
+
+let boot: any = null;
+let error: string | null = null;
+
+try {
+  const data = await getEntries();
+  ensureOptions(observedOptions(data.entries));
+  boot = { ...data, scoring: readScoring() };
+} catch (err) {
+  error = err instanceof Error ? err.message : String(err);
+}
 ---
 
 <html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FTC Scouting Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <div>
+          <h1>FTC Scouting Dashboard</h1>
+          <p class="sub">
+            Team rankings from the scouting form. Category scores are averaged per team, so a blank
+            answer never drags anyone down.
+          </p>
+        </div>
+        {!error && (
+          <div class="masthead-actions">
+            <span id="fetched" class="sub"></span>
+            <button id="refresh" class="btn" type="button">Refresh</button>
+          </div>
+        )}
+      </header>
+
+      {error ? (
+        <div class="banner">
+          <strong>Could not load the Airtable data.</strong>
+          <div style="margin-top:6px">{error}</div>
+        </div>
+      ) : (
+        <>
+          <div id="tiles" class="tiles"></div>
+
+          <div class="tabs" role="tablist">
+            <button class="tab" role="tab" data-tab="leaderboard" aria-selected="true">Leaderboard</button>
+            <button class="tab" role="tab" data-tab="categories" aria-selected="false">Categories</button>
+            <button class="tab" role="tab" data-tab="scoring" aria-selected="false">Scoring</button>
+            <button class="tab" role="tab" data-tab="team" aria-selected="false">Team</button>
+          </div>
+
+          <section class="panel" data-tab="leaderboard" role="tabpanel">
+            <div class="card">
+              <div class="card-head">
+                <h2 class="card-title">Ranked by total average points</h2>
+              </div>
+              <p class="card-sub">
+                Each bar stacks a team's average points per category. Click a team name to open its
+                entries; click a legend entry to drop that category from the stack.
+              </p>
+              <div id="leaderboard"></div>
+            </div>
+          </section>
+
+          <section class="panel" data-tab="categories" role="tabpanel" hidden>
+            <div id="facets" class="facets"></div>
+          </section>
+
+          <section class="panel" data-tab="scoring" role="tabpanel" hidden>
+            <div class="card" style="display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+              <div>
+                <h2 class="card-title">Point values</h2>
+                <p class="card-sub" style="margin:4px 0 0">
+                  Edits apply to every ranking immediately and are saved to the local SQLite database
+                  (<code>data/scouting.db</code>) — the Airtable token is read-only for now.
+                </p>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center">
+                <span id="save-state" class="save-state"></span>
+                <button id="reset" class="btn" type="button">Reset to defaults</button>
+              </div>
+            </div>
+            <div id="scoring" class="score-grid"></div>
+          </section>
+
+          <section class="panel" data-tab="team" role="tabpanel" hidden>
+            <div class="team-picker">
+              <label for="team-select" class="sub">Team</label>
+              <select id="team-select"></select>
+            </div>
+            <div id="team-detail"></div>
+          </section>
+
+          <div id="tip" role="tooltip"></div>
+          <script id="bootstrap" type="application/json" set:html={JSON.stringify(boot)}></script>
+          <script src="../scripts/dashboard.ts"></script>
+        </>
+      )}
+    </div>
+  </body>
 </html>
