@@ -1,0 +1,10 @@
+services:
+  scouting:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    # Bound to loopback: tailscale serve reaches it, the open internet does not.
+    ports:
+      - "127.0.0.1:4321:4321"
+    volumes:
+      - ./data:/data
