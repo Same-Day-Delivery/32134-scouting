@@ -2,7 +2,6 @@
 import { countAdmins } from '../lib/auth';
 import { clientIp, userAgent } from '../lib/request';
 import {
-  PASSWORD_MIN,
   USERNAME_RULE,
   createUser,
   deleteUser,
@@ -162,9 +161,9 @@ const adminCount = countAdmins();
       <section class="card">
         <div class="card-head"><h2 class="card-title">Add a login</h2></div>
         <p class="card-sub">
-          Usernames are {USERNAME_RULE}. Passwords are at least {PASSWORD_MIN} characters and are
-          stored hashed, so nobody — including you — can read one back out. To change a forgotten
-          password, set a new one below.
+          Usernames are {USERNAME_RULE}. Passwords have no length rule, but are stored hashed, so
+          nobody — including you — can read one back out. To change a forgotten password, set a new
+          one below.
         </p>
         <form method="post" class="admin-new">
           <input type="hidden" name="action" value="create" />
@@ -174,7 +173,7 @@ const adminCount = countAdmins();
           </label>
           <label class="field">
             <span>Password</span>
-            <input name="password" type="text" required autocomplete="off" minlength={PASSWORD_MIN} />
+            <input name="password" type="text" required autocomplete="off" />
           </label>
           <label class="field">
             <span>Role</span>
@@ -239,7 +238,6 @@ const adminCount = countAdmins();
                           name="password"
                           type="text"
                           placeholder="new password"
-                          minlength={PASSWORD_MIN}
                           required
                           autocomplete="off"
                         />

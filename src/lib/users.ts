@@ -88,17 +88,19 @@ function dummyVerify() {
 /* ------------------------------------------------------------------- rules */
 
 export const USERNAME_RULE = 'letters, numbers, dot, dash and underscore; 3-32 characters';
-export const PASSWORD_MIN = 8;
 
 export function validateUsername(name: string): string | null {
   if (!/^[A-Za-z0-9._-]{3,32}$/.test(name)) return `Username must be ${USERNAME_RULE}.`;
   return null;
 }
 
+/**
+ * No length rule: a handful of shared logins on a team dashboard, not a public
+ * site. A blank password is still refused, since that is an account with no
+ * password at all rather than a short one.
+ */
 export function validatePassword(password: string): string | null {
-  if (password.length < PASSWORD_MIN) {
-    return `Password must be at least ${PASSWORD_MIN} characters.`;
-  }
+  if (password.length === 0) return 'Password cannot be blank.';
   return null;
 }
 
