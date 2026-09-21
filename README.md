@@ -18,8 +18,8 @@ AIRTABLE_BASE_ID=app...
 AIRTABLE_TABLE_NAME=Data         # scouting form responses, read
 AIRTABLE_TABLE_NAME_2=Points     # calculated team stats, written
 
-AUTH_USERNAME=scout              # the login everyone shares
-AUTH_PASSWORD=...                # the password everyone shares
+AUTH_USERNAME=scout              # seeds the first admin account
+AUTH_PASSWORD=...                # seeds the first admin account
 AUTH_SECRET=...                  # openssl rand -hex 32
 ```
 
@@ -28,16 +28,47 @@ and `schema.bases:write`.
 
 ## Signing in
 
-Every page and API route is behind one shared username and password, set in
-`.env`. Signing in stores a cookie signed with `AUTH_SECRET` that lasts a week;
-**Sign out** in the dashboard header clears it.
+Every page and API route needs an account. Signing in stores a cookie signed
+with `AUTH_SECRET` that lasts a week; **Sign out** in the header clears it.
+
+Accounts live in the database, not in `.env`. On a database with no accounts,
+`AUTH_USERNAME` and `AUTH_PASSWORD` create the first **admin** at startup — the
+account you then use to make the others. They are ignored once an account
+exists, so changing that password later means using the admin page, not `.env`.
+With no accounts and no `AUTH_PASSWORD`, nobody can sign in and the startup log
+says so; it never falls open.
 
 Change `AUTH_SECRET` and every existing session is invalidated, so everyone
 signs in again — useful if a password leaks. Leave it unset and the server
 generates a random one at startup, which means a restart logs everyone out.
 
-With `AUTH_PASSWORD` unset the server refuses every sign-in rather than falling
-open; the startup log says so.
+## Accounts (`/admin`, admins only)
+
+The **Accounts** button in the dashboard header — shown only to admins — opens
+a page to:
+
+- **Create a login.** Username, password, and whether they are an admin. Normal
+  users get the dashboard; admins also get this page.
+- **Set a new password.** Passwords are stored scrypt-hashed and cannot be read
+  back, so a forgotten one is replaced, not recovered. Setting a password signs
+  that person out of every device they are signed in on.
+- **Change a role or delete an account.** Deleting signs them out immediately.
+
+Two things the page will not let you do, because both would lock everyone out
+of account management for good: delete the account you are signed in as, and
+remove the last remaining admin.
+
+### The sign-in log
+
+The same page lists every sign-in attempt — who, when, from which IP, and on
+what device — successful or not, alongside every account change made from the
+admin page. A failed attempt records the username as typed, which is what makes
+a run of guesses against a real account visible. Deleting an account leaves its
+log entries in place.
+
+Behind `tailscale serve` the client IP comes from `X-Forwarded-For`, which is
+trustworthy here because compose binds the port to loopback, so nothing but
+that proxy can reach it.
 
 ## Tabs
 
@@ -111,13 +142,16 @@ src/
 │   ├── compute.ts         ranking maths (shared with the browser)
 │   ├── db.ts              local SQLite scoring store
 │   ├── scoring-config.ts  categories and their default point values
-│   └── auth.ts            credential check + signed session cookie
-├── middleware.ts          gates every route behind a session
+│   ├── auth.ts            sessions, sign-in, first-admin seeding
+│   ├── users.ts           accounts, password hashing, sign-in log
+│   └── request.ts         client IP and user agent, proxy-aware
+├── middleware.ts          gates every route; /admin needs an admin
 ├── pages/
 │   ├── api/entries.ts     GET  responses + scoring
 │   ├── api/scoring.ts     GET/POST point values
 │   ├── login.astro        the sign-in form
 │   ├── logout.ts          POST clears the session
+│   ├── admin.astro        accounts + the sign-in log
 │   └── index.astro        the dashboard
 ├── scripts/dashboard.ts   charts, tabs, editing
 └── styles/dashboard.css

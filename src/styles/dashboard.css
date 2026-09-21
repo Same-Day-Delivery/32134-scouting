@@ -265,3 +265,52 @@ select {
 .login-error { margin: 0; font-size: 13px; color: var(--critical); }
 .login-btn { justify-self: stretch; padding: 9px 12px; }
 .logout { display: inline; }
+
+/* ---------- admin ---------- */
+.flash { margin: 20px 0 0; padding: 10px 14px; border-radius: 10px; font-size: 13px; border: 1px solid var(--border); }
+.flash-ok { background: var(--surface); color: var(--ink); }
+.flash-err { background: var(--surface); color: var(--critical); border-color: var(--critical); }
+
+.card + .card { margin-top: 20px; }
+.admin-new {
+  display: grid; gap: 12px; align-items: end;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+.admin-new .btn { height: 35px; }
+.field select, .inline-form select {
+  font: inherit; font-size: 13px; width: 100%; box-sizing: border-box;
+  padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--plane); color: var(--ink);
+}
+
+.table-scroll { overflow-x: auto; }
+.admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.admin-table th {
+  text-align: left; font-weight: 560; font-size: 12px; color: var(--muted);
+  padding: 0 12px 8px 0; border-bottom: 1px solid var(--grid); white-space: nowrap;
+}
+.admin-table td { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+.admin-table tr:last-child td { border-bottom: 0; }
+.admin-table time { white-space: nowrap; color: var(--ink-2); }
+
+.inline-form { display: flex; gap: 6px; align-items: center; margin: 0; }
+.inline-form input { min-width: 130px; }
+.inline-form select { width: auto; min-width: 96px; padding: 5px 8px; }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn-danger { color: var(--critical); }
+.btn-danger:disabled { color: var(--muted); }
+
+.pill {
+  margin-left: 6px; font-size: 11px; color: var(--ink-2);
+  background: var(--surface-2); border-radius: 999px; padding: 1px 7px;
+}
+.tag { font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.tag-ok { color: var(--good); }
+.tag-bad { color: var(--critical); }
+.muted { color: var(--muted); }
+.mono { font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+.device {
+  color: var(--muted); font-size: 12px;
+  max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.whoami { font-size: 13px; color: var(--ink-2); }

@@ -1,10 +1,7 @@
 ---
-import {
-  SESSION_COOKIE,
-  checkCredentials,
-  createSessionToken,
-  sessionCookieOptions,
-} from '../lib/auth';
+import { SESSION_COOKIE, createSessionToken, sessionCookieOptions, signIn } from '../lib/auth';
+import { clientIp, userAgent } from '../lib/request';
+import { recordLogin } from '../lib/users';
 import '../styles/dashboard.css';
 
 export const prerender = false;
@@ -15,22 +12,39 @@ const safeNext = (value: string | null) =>
 
 let error: string | null = null;
 let next = safeNext(Astro.url.searchParams.get('next'));
+let username = '';
 
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
-  const username = String(form.get('username') ?? '');
+  username = String(form.get('username') ?? '').trim();
   const password = String(form.get('password') ?? '');
   next = safeNext(String(form.get('next') ?? ''));
 
-  if (checkCredentials(username, password)) {
-    Astro.cookies.set(SESSION_COOKIE, createSessionToken(), sessionCookieOptions(Astro.url));
+  const user = signIn(username, password);
+
+  // Every attempt is logged, successful or not — a run of failures against a
+  // real username is the thing the admin most needs to see.
+  recordLogin({
+    userId: user?.id ?? null,
+    // The account's own spelling on success, so one account is one name in the
+    // log however it was typed; the typed text on failure, since that is the
+    // evidence of what was actually tried.
+    username: user?.username ?? (username || '(blank)'),
+    ok: Boolean(user),
+    ip: clientIp(Astro),
+    userAgent: userAgent(Astro),
+    note: user ? null : 'wrong username or password',
+  });
+
+  if (user) {
+    Astro.cookies.set(SESSION_COOKIE, createSessionToken(user), sessionCookieOptions(Astro.url));
     return Astro.redirect(next, 303);
   }
   error = 'Wrong username or password.';
 }
 
 // Already signed in and visiting /login directly: nothing to do here.
-if (Astro.request.method === 'GET' && Astro.locals.authed) return Astro.redirect(next, 302);
+if (Astro.request.method === 'GET' && Astro.locals.user) return Astro.redirect(next, 302);
 ---
 
 <html lang="en">
@@ -52,7 +66,7 @@ if (Astro.request.method === 'GET' && Astro.locals.authed) return Astro.redirect
 
           <label class="field">
             <span>Username</span>
-            <input name="username" autocomplete="username" required autofocus />
+            <input name="username" value={username} autocomplete="username" required autofocus />
           </label>
 
           <label class="field">

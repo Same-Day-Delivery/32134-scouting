@@ -1,4 +1,14 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import {
+  type User,
+  authenticate,
+  countAdmins,
+  createUser,
+  getUser,
+  listUsers,
+  markLoggedIn,
+  usernameTaken,
+} from './users';
 
 export const SESSION_COOKIE = 'scouting_session';
 
@@ -23,62 +33,83 @@ const env = (key: string) => {
   return typeof raw === 'string' && raw.length > 0 ? raw : null;
 };
 
-const USERNAME = env('AUTH_USERNAME') ?? 'scout';
-const PASSWORD = env('AUTH_PASSWORD');
-
 // Without a fixed secret every restart invalidates the cookies it signed, so
 // a deployment that cares about staying logged in sets AUTH_SECRET itself.
 const SECRET = env('AUTH_SECRET') ?? randomBytes(32).toString('hex');
 
-if (!PASSWORD) {
-  console.warn(
-    '[auth] AUTH_PASSWORD is not set — every request will be refused. Add it to .env.',
-  );
-} else if (!env('AUTH_SECRET')) {
+if (!env('AUTH_SECRET')) {
   console.warn(
     '[auth] AUTH_SECRET is not set — a random one was generated, so restarting logs everyone out.',
   );
 }
 
-/** Compares without leaking, through timing, how much of the input matched. */
-const constantTimeEqual = (a: string, b: string) => {
-  const left = Buffer.from(a, 'utf8');
-  const right = Buffer.from(b, 'utf8');
-  // timingSafeEqual throws on a length mismatch, so hash first: the digests
-  // are always the same length and differ whenever the inputs do.
-  const digest = (buf: Buffer) => createHmac('sha256', SECRET).update(buf).digest();
-  return timingSafeEqual(digest(left), digest(right));
-};
+/**
+ * Accounts live in the database, but an empty database has nobody to log in
+ * with. AUTH_USERNAME / AUTH_PASSWORD seed the first admin and are ignored
+ * from then on, so changing that password later means using the admin page.
+ */
+let seeded = false;
+export function ensureSeedAdmin() {
+  if (seeded) return;
+  seeded = true;
 
-export const checkCredentials = (username: string, password: string) => {
-  if (!PASSWORD) return false;
-  // Both halves always run, so a wrong username costs the same as a wrong password.
-  const userOk = constantTimeEqual(username, USERNAME);
-  const passOk = constantTimeEqual(password, PASSWORD);
-  return userOk && passOk;
-};
+  if (listUsers().length > 0) return;
+
+  const username = env('AUTH_USERNAME') ?? 'admin';
+  const password = env('AUTH_PASSWORD');
+  if (!password) {
+    console.warn(
+      '[auth] No accounts exist and AUTH_PASSWORD is not set — nobody can sign in. ' +
+        'Set AUTH_USERNAME and AUTH_PASSWORD in .env and restart to create the first admin.',
+    );
+    return;
+  }
+  if (usernameTaken(username)) return;
+  createUser(username, password, true);
+  console.log(`[auth] Created the first admin account "${username}" from .env.`);
+}
+
+/* ---------------------------------------------------------------- sessions */
 
 const sign = (payload: string) => createHmac('sha256', SECRET).update(payload).digest('base64url');
 
-/** A token is `<expiry>.<signature>`; the signature is what makes it unforgeable. */
-export const createSessionToken = () => {
+const constantTimeEqual = (a: string, b: string) => {
+  // timingSafeEqual throws on a length mismatch, so hash first: the digests
+  // are always the same length and differ whenever the inputs do.
+  const digest = (v: string) => createHmac('sha256', SECRET).update(v).digest();
+  return timingSafeEqual(digest(a), digest(b));
+};
+
+/**
+ * A token is `<userId>.<tokenVersion>.<expiry>.<signature>`. The signature is
+ * what makes it unforgeable; the version is what lets a password change cut
+ * every session that user already had.
+ */
+export function createSessionToken(user: User): string {
   const expiresAt = Date.now() + SESSION_MAX_AGE * 1000;
-  const payload = String(expiresAt);
+  const payload = `${user.id}.${user.tokenVersion}.${expiresAt}`;
   return `${payload}.${sign(payload)}`;
-};
+}
 
-export const isValidSessionToken = (token: string | undefined) => {
-  if (!token) return false;
+/** The signed-in user for a cookie value, or null if it is missing or stale. */
+export function resolveSession(token: string | undefined): User | null {
+  if (!token) return null;
+
   const cut = token.lastIndexOf('.');
-  if (cut < 1) return false;
-
+  if (cut < 1) return null;
   const payload = token.slice(0, cut);
-  const signature = token.slice(cut + 1);
-  if (!constantTimeEqual(signature, sign(payload))) return false;
+  if (!constantTimeEqual(token.slice(cut + 1), sign(payload))) return null;
 
-  const expiresAt = Number(payload);
-  return Number.isFinite(expiresAt) && expiresAt > Date.now();
-};
+  const [idRaw, versionRaw, expiryRaw] = payload.split('.');
+  const expiresAt = Number(expiryRaw);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
+
+  const user = getUser(Number(idRaw));
+  // A deleted account, or one whose password changed, fails here even though
+  // the signature is still good.
+  if (!user || user.tokenVersion !== Number(versionRaw)) return null;
+  return user;
+}
 
 /** Secure is conditional: the tailnet serves HTTPS, but `astro dev` is plain HTTP. */
 export const sessionCookieOptions = (url: URL) => ({
@@ -88,3 +119,15 @@ export const sessionCookieOptions = (url: URL) => ({
   path: '/',
   maxAge: SESSION_MAX_AGE,
 });
+
+/* ------------------------------------------------------------------- login */
+
+/** Verifies a username/password pair and stamps the user's last-login time. */
+export function signIn(username: string, password: string): User | null {
+  ensureSeedAdmin();
+  const user = authenticate(username, password);
+  if (user) markLoggedIn(user.id);
+  return user;
+}
+
+export { countAdmins };

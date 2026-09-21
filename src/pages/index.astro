@@ -4,6 +4,7 @@ import '../styles/dashboard.css';
 
 export const prerender = false;
 
+const user = Astro.locals.user;
 let boot: any = null;
 let error: string | null = null;
 
@@ -40,6 +41,8 @@ try {
               <button id="refresh" class="btn" type="button">Refresh</button>
             </>
           )}
+          {user?.isAdmin && <a class="btn" href="/admin">Accounts</a>}
+          <span class="whoami">{user?.username}</span>
           <form method="post" action="/logout" class="logout">
             <button class="btn btn-quiet" type="submit">Sign out</button>
           </form>

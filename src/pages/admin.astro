@@ -1,0 +1,348 @@
+---
+import { countAdmins } from '../lib/auth';
+import { clientIp, userAgent } from '../lib/request';
+import {
+  PASSWORD_MIN,
+  USERNAME_RULE,
+  createUser,
+  deleteUser,
+  getUser,
+  listLoginEvents,
+  listUsers,
+  recordLogin,
+  setAdmin,
+  setPassword,
+  usernameTaken,
+  validatePassword,
+  validateUsername,
+} from '../lib/users';
+import '../styles/dashboard.css';
+
+export const prerender = false;
+
+// The middleware has already refused everyone who is not an admin.
+const me = Astro.locals.user!;
+
+const LOG_LIMIT = 200;
+
+/** Post-redirect-get, so a refresh cannot repeat the last action. */
+const back = (params: Record<string, string>) =>
+  Astro.redirect(`/admin?${new URLSearchParams(params)}`, 303);
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const action = String(form.get('action') ?? '');
+  const targetId = Number(form.get('id') ?? 0);
+  const target = targetId ? getUser(targetId) : null;
+
+  if (action === 'create') {
+    const username = String(form.get('username') ?? '').trim();
+    const password = String(form.get('password') ?? '');
+    const isAdmin = form.get('role') === 'admin';
+
+    const problem =
+      validateUsername(username) ??
+      validatePassword(password) ??
+      (usernameTaken(username) ? `"${username}" is already taken.` : null);
+
+    if (problem) return back({ err: problem });
+
+    createUser(username, password, isAdmin);
+    // Worth a log line of its own: it explains an account the log has no
+    // sign-ins for yet.
+    recordLogin({
+      userId: me.id,
+      username: me.username,
+      ok: true,
+      ip: clientIp(Astro),
+      userAgent: userAgent(Astro),
+      note: `created account "${username}"${isAdmin ? ' (admin)' : ''}`,
+    });
+    return back({ ok: `Created ${username}.` });
+  }
+
+  if (!target) return back({ err: 'That account no longer exists.' });
+
+  if (action === 'password') {
+    const password = String(form.get('password') ?? '');
+    const problem = validatePassword(password);
+    if (problem) return back({ err: problem });
+
+    setPassword(target.id, password);
+    recordLogin({
+      userId: me.id,
+      username: me.username,
+      ok: true,
+      ip: clientIp(Astro),
+      userAgent: userAgent(Astro),
+      note: `changed the password for "${target.username}"`,
+    });
+    // Their cookies are now stale, so say so rather than leaving it a surprise.
+    return back({
+      ok:
+        target.id === me.id
+          ? `Your password is changed. Sign in again on your other devices.`
+          : `Changed the password for ${target.username}; they are signed out everywhere.`,
+    });
+  }
+
+  if (action === 'role') {
+    const makeAdmin = form.get('role') === 'admin';
+    // Removing the last admin would lock everyone out of this page for good.
+    if (!makeAdmin && target.isAdmin && countAdmins() <= 1) {
+      return back({ err: 'That is the only admin — make someone else an admin first.' });
+    }
+    setAdmin(target.id, makeAdmin);
+    recordLogin({
+      userId: me.id,
+      username: me.username,
+      ok: true,
+      ip: clientIp(Astro),
+      userAgent: userAgent(Astro),
+      note: `${makeAdmin ? 'made' : 'removed'} "${target.username}" ${makeAdmin ? 'an admin' : 'as admin'}`,
+    });
+    return back({ ok: `${target.username} is now ${makeAdmin ? 'an admin' : 'a normal user'}.` });
+  }
+
+  if (action === 'delete') {
+    if (target.id === me.id) return back({ err: 'You cannot delete the account you are using.' });
+    if (target.isAdmin && countAdmins() <= 1) {
+      return back({ err: 'That is the only admin — make someone else an admin first.' });
+    }
+    deleteUser(target.id);
+    recordLogin({
+      userId: me.id,
+      username: me.username,
+      ok: true,
+      ip: clientIp(Astro),
+      userAgent: userAgent(Astro),
+      note: `deleted account "${target.username}"`,
+    });
+    return back({ ok: `Deleted ${target.username}.` });
+  }
+
+  return back({ err: 'Unknown action.' });
+}
+
+const ok = Astro.url.searchParams.get('ok');
+const err = Astro.url.searchParams.get('err');
+const users = listUsers();
+const events = listLoginEvents(LOG_LIMIT);
+const adminCount = countAdmins();
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Accounts · FTC Scouting Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="robots" content="noindex" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <div>
+          <h1>Accounts</h1>
+          <p class="sub">
+            Who can sign in to the dashboard, and every sign-in attempt they have made.
+          </p>
+        </div>
+        <div class="masthead-actions">
+          <a class="btn" href="/">Dashboard</a>
+          <form method="post" action="/logout" class="logout">
+            <button class="btn btn-quiet" type="submit">Sign out</button>
+          </form>
+        </div>
+      </header>
+
+      {ok && <p class="flash flash-ok" role="status">{ok}</p>}
+      {err && <p class="flash flash-err" role="alert">{err}</p>}
+
+      <section class="card">
+        <div class="card-head"><h2 class="card-title">Add a login</h2></div>
+        <p class="card-sub">
+          Usernames are {USERNAME_RULE}. Passwords are at least {PASSWORD_MIN} characters and are
+          stored hashed, so nobody — including you — can read one back out. To change a forgotten
+          password, set a new one below.
+        </p>
+        <form method="post" class="admin-new">
+          <input type="hidden" name="action" value="create" />
+          <label class="field">
+            <span>Username</span>
+            <input name="username" required autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input name="password" type="text" required autocomplete="off" minlength={PASSWORD_MIN} />
+          </label>
+          <label class="field">
+            <span>Role</span>
+            <select name="role">
+              <option value="user">Normal — dashboard only</option>
+              <option value="admin">Admin — can also manage accounts</option>
+            </select>
+          </label>
+          <button class="btn" type="submit">Create</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2 class="card-title">Logins</h2>
+          <span class="sub">{users.length} {users.length === 1 ? 'account' : 'accounts'}</span>
+        </div>
+
+        <div class="table-scroll">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Created</th>
+                <th>Last signed in</th>
+                <th>New password</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => {
+                const lastAdmin = u.isAdmin && adminCount <= 1;
+                return (
+                  <tr>
+                    <td>
+                      <strong>{u.username}</strong>
+                      {u.id === me.id && <span class="pill">you</span>}
+                    </td>
+                    <td>
+                      <form method="post" class="inline-form">
+                        <input type="hidden" name="action" value="role" />
+                        <input type="hidden" name="id" value={u.id} />
+                        <select name="role" disabled={lastAdmin} onchange="this.form.submit()">
+                          <option value="user" selected={!u.isAdmin}>Normal</option>
+                          <option value="admin" selected={u.isAdmin}>Admin</option>
+                        </select>
+                        <noscript><button class="btn btn-sm" type="submit">Set</button></noscript>
+                      </form>
+                    </td>
+                    <td><time datetime={u.createdAt}>{u.createdAt}</time></td>
+                    <td>
+                      {u.lastLoginAt
+                        ? <time datetime={u.lastLoginAt}>{u.lastLoginAt}</time>
+                        : <span class="muted">never</span>}
+                    </td>
+                    <td>
+                      <form method="post" class="inline-form">
+                        <input type="hidden" name="action" value="password" />
+                        <input type="hidden" name="id" value={u.id} />
+                        <input
+                          name="password"
+                          type="text"
+                          placeholder="new password"
+                          minlength={PASSWORD_MIN}
+                          required
+                          autocomplete="off"
+                        />
+                        <button class="btn btn-sm" type="submit">Set</button>
+                      </form>
+                    </td>
+                    <td>
+                      <form method="post" class="inline-form" data-confirm={`Delete ${u.username}?`}>
+                        <input type="hidden" name="action" value="delete" />
+                        <input type="hidden" name="id" value={u.id} />
+                        <button
+                          class="btn btn-sm btn-danger"
+                          type="submit"
+                          disabled={u.id === me.id || lastAdmin}
+                          title={
+                            u.id === me.id
+                              ? 'You cannot delete the account you are using'
+                              : lastAdmin
+                                ? 'The only admin cannot be deleted'
+                                : `Delete ${u.username}`
+                          }
+                        >
+                          Delete
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2 class="card-title">Sign-in log</h2>
+          <span class="sub">
+            {events.length === LOG_LIMIT ? `latest ${LOG_LIMIT}` : `${events.length} recorded`}
+          </span>
+        </div>
+        <p class="card-sub">
+          Every sign-in attempt, and every account change made here. A cluster of failures against a
+          real username is worth a new password.
+        </p>
+
+        {events.length === 0 ? (
+          <p class="empty">Nothing yet.</p>
+        ) : (
+          <div class="table-scroll">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Username</th>
+                  <th>Result</th>
+                  <th>IP</th>
+                  <th>Device</th>
+                </tr>
+              </thead>
+              <tbody>
+                {events.map((e) => (
+                  <tr>
+                    <td><time datetime={e.at}>{e.at}</time></td>
+                    <td>{e.username}</td>
+                    <td>
+                      {e.note && !e.note.startsWith('wrong') ? (
+                        <span class="tag">{e.note}</span>
+                      ) : e.ok ? (
+                        <span class="tag tag-ok">signed in</span>
+                      ) : (
+                        <span class="tag tag-bad">failed</span>
+                      )}
+                    </td>
+                    <td class="mono">{e.ip ?? '—'}</td>
+                    <td class="device" title={e.userAgent ?? ''}>{e.userAgent ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+
+    <script>
+      // Timestamps are stored and rendered as UTC ISO strings; show them in
+      // whatever timezone the person reading the page is actually in.
+      for (const el of document.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
+        const when = new Date(el.dateTime);
+        if (!Number.isNaN(when.getTime())) {
+          el.textContent = when.toLocaleString(undefined, {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          });
+        }
+      }
+
+      for (const form of document.querySelectorAll<HTMLFormElement>('form[data-confirm]')) {
+        form.addEventListener('submit', (ev) => {
+          if (!confirm(form.dataset.confirm!)) ev.preventDefault();
+        });
+      }
+    </script>
+  </body>
+</html>
