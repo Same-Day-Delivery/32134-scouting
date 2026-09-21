@@ -17,10 +17,27 @@ AIRTABLE_ACCESS_TOKEN=pat...
 AIRTABLE_BASE_ID=app...
 AIRTABLE_TABLE_NAME=Data         # scouting form responses, read
 AIRTABLE_TABLE_NAME_2=Points     # calculated team stats, written
+
+AUTH_USERNAME=scout              # the login everyone shares
+AUTH_PASSWORD=...                # the password everyone shares
+AUTH_SECRET=...                  # openssl rand -hex 32
 ```
 
 The token needs `data.records:read`, `data.records:write`, `schema.bases:read`
 and `schema.bases:write`.
+
+## Signing in
+
+Every page and API route is behind one shared username and password, set in
+`.env`. Signing in stores a cookie signed with `AUTH_SECRET` that lasts a week;
+**Sign out** in the dashboard header clears it.
+
+Change `AUTH_SECRET` and every existing session is invalidated, so everyone
+signs in again — useful if a password leaks. Leave it unset and the server
+generates a random one at startup, which means a restart logs everyone out.
+
+With `AUTH_PASSWORD` unset the server refuses every sign-in rather than falling
+open; the startup log says so.
 
 ## Tabs
 
@@ -93,10 +110,14 @@ src/
 │   ├── points-table.ts    write calculated stats back to Airtable
 │   ├── compute.ts         ranking maths (shared with the browser)
 │   ├── db.ts              local SQLite scoring store
-│   └── scoring-config.ts  categories and their default point values
+│   ├── scoring-config.ts  categories and their default point values
+│   └── auth.ts            credential check + signed session cookie
+├── middleware.ts          gates every route behind a session
 ├── pages/
 │   ├── api/entries.ts     GET  responses + scoring
 │   ├── api/scoring.ts     GET/POST point values
+│   ├── login.astro        the sign-in form
+│   ├── logout.ts          POST clears the session
 │   └── index.astro        the dashboard
 ├── scripts/dashboard.ts   charts, tabs, editing
 └── styles/dashboard.css

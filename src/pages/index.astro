@@ -33,12 +33,17 @@ try {
             answer never drags anyone down.
           </p>
         </div>
-        {!error && (
-          <div class="masthead-actions">
-            <span id="fetched" class="sub"></span>
-            <button id="refresh" class="btn" type="button">Refresh</button>
-          </div>
-        )}
+        <div class="masthead-actions">
+          {!error && (
+            <>
+              <span id="fetched" class="sub"></span>
+              <button id="refresh" class="btn" type="button">Refresh</button>
+            </>
+          )}
+          <form method="post" action="/logout" class="logout">
+            <button class="btn btn-quiet" type="submit">Sign out</button>
+          </form>
+        </div>
       </header>
 
       {error ? (

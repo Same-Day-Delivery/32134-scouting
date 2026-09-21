@@ -20,6 +20,17 @@ interface Boot {
   sync: Sync | null;
 }
 
+/* The session can expire while a tab sits open; the API answers 401 and the
+   page reloads, which the middleware turns into the login form. */
+const api = async (input: string, init?: RequestInit) => {
+  const res = await fetch(input, init);
+  if (res.status === 401) {
+    location.reload();
+    throw new Error('Session expired — signing in again.');
+  }
+  return res;
+};
+
 const boot: Boot = JSON.parse(document.getElementById('bootstrap')!.textContent!);
 let entries = boot.entries;
 let scoring = boot.scoring;
@@ -433,7 +444,7 @@ async function flushSave() {
   pending.categories.clear();
   const state = $('#save-state');
   try {
-    const res = await fetch('/api/scoring', {
+    const res = await api('/api/scoring', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -769,7 +780,7 @@ $('#refresh').addEventListener('click', async (ev) => {
   btn.disabled = true;
   btn.textContent = 'Refreshing…';
   try {
-    const res = await fetch('/api/entries?refresh=1');
+    const res = await api('/api/entries?refresh=1');
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? res.statusText);
     entries = data.entries;
@@ -789,7 +800,7 @@ $('#refresh').addEventListener('click', async (ev) => {
 
 $('#reset').addEventListener('click', async () => {
   if (!confirm('Reset every point value and weight to the defaults?')) return;
-  const res = await fetch('/api/scoring', {
+  const res = await api('/api/scoring', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ reset: true }),

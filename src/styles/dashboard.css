@@ -249,3 +249,19 @@ select {
 
 .sync-ok { font-size: 12px; color: var(--ink-2); margin: 16px 0 0; }
 .banner code { font-size: 12px; word-break: break-word; }
+
+/* ---------- login ---------- */
+.login-wrap { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
+.login-card { width: 100%; max-width: 360px; margin: 0; }
+.login-card h1 { font-size: 20px; }
+.login-form { display: grid; gap: 14px; margin-top: 20px; }
+.field { display: grid; gap: 6px; font-size: 12px; color: var(--ink-2); }
+.field input {
+  font: inherit; font-size: 14px; width: 100%; box-sizing: border-box;
+  padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--plane); color: var(--ink);
+}
+.field input:focus-visible { outline: 2px solid var(--s1); outline-offset: 1px; }
+.login-error { margin: 0; font-size: 13px; color: var(--critical); }
+.login-btn { justify-self: stretch; padding: 9px 12px; }
+.logout { display: inline; }

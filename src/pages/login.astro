@@ -1,0 +1,70 @@
+---
+import {
+  SESSION_COOKIE,
+  checkCredentials,
+  createSessionToken,
+  sessionCookieOptions,
+} from '../lib/auth';
+import '../styles/dashboard.css';
+
+export const prerender = false;
+
+/** Only same-site paths, so a crafted `next` cannot bounce anyone off-site. */
+const safeNext = (value: string | null) =>
+  value && value.startsWith('/') && !value.startsWith('//') ? value : '/';
+
+let error: string | null = null;
+let next = safeNext(Astro.url.searchParams.get('next'));
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const username = String(form.get('username') ?? '');
+  const password = String(form.get('password') ?? '');
+  next = safeNext(String(form.get('next') ?? ''));
+
+  if (checkCredentials(username, password)) {
+    Astro.cookies.set(SESSION_COOKIE, createSessionToken(), sessionCookieOptions(Astro.url));
+    return Astro.redirect(next, 303);
+  }
+  error = 'Wrong username or password.';
+}
+
+// Already signed in and visiting /login directly: nothing to do here.
+if (Astro.request.method === 'GET' && Astro.locals.authed) return Astro.redirect(next, 302);
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in · FTC Scouting Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="robots" content="noindex" />
+  </head>
+  <body>
+    <main class="login-wrap">
+      <div class="card login-card">
+        <h1>FTC Scouting Dashboard</h1>
+        <p class="sub">Sign in to see team rankings.</p>
+
+        <form method="post" class="login-form">
+          <input type="hidden" name="next" value={next} />
+
+          <label class="field">
+            <span>Username</span>
+            <input name="username" autocomplete="username" required autofocus />
+          </label>
+
+          <label class="field">
+            <span>Password</span>
+            <input name="password" type="password" autocomplete="current-password" required />
+          </label>
+
+          {error && <p class="login-error" role="alert">{error}</p>}
+
+          <button class="btn login-btn" type="submit">Sign in</button>
+        </form>
+      </div>
+    </main>
+  </body>
+</html>

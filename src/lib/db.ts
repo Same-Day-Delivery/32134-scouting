@@ -39,6 +39,9 @@ function connect(): DatabaseSync {
   return conn;
 }
 
+/** The same file backs the user accounts in `users.ts`; one connection serves both. */
+export const openDb = (): DatabaseSync => connect();
+
 function addColumn(conn: DatabaseSync, table: string, column: string, decl: string) {
   const cols = conn.prepare(`PRAGMA table_info(${table})`).all() as any[];
   if (!cols.some((c) => c.name === column)) {
