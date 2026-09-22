@@ -54,9 +54,26 @@ a page to:
   that person out of every device they are signed in on.
 - **Change a role or delete an account.** Deleting signs them out immediately.
 
-Two things the page will not let you do, because both would lock everyone out
-of account management for good: delete the account you are signed in as, and
-remove the last remaining admin.
+Three things the page will not let you do, because each locks someone out of
+the page that would undo it: delete the account you are signed in as, remove
+the last remaining admin, and remove your own admin access — another admin has
+to do that one for you.
+
+If you do end up locked out — `/admin` answering **Not found** means you are
+signed in but no longer an admin — sign in as one of the other admins and
+promote yourself back. To see who that is, or to fix it directly:
+
+```sh
+# who is an admin?
+docker compose exec scouting node -e "const{DatabaseSync}=require('node:sqlite');\
+  console.table(new DatabaseSync('/data/scouting.db')\
+  .prepare('select id, username, is_admin from users').all())"
+
+# put an account back to admin
+docker compose exec scouting node -e "const{DatabaseSync}=require('node:sqlite');\
+  new DatabaseSync('/data/scouting.db')\
+  .prepare('update users set is_admin = 1 where username = ?').run('admin')"
+```
 
 ### The sign-in log
 

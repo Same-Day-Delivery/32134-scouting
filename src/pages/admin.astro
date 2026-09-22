@@ -1,5 +1,10 @@
 ---
-import { countAdmins } from '../lib/auth';
+import {
+  SESSION_COOKIE,
+  countAdmins,
+  createSessionToken,
+  sessionCookieOptions,
+} from '../lib/auth';
 import { clientIp, userAgent } from '../lib/request';
 import {
   USERNAME_RULE,
@@ -68,6 +73,19 @@ if (Astro.request.method === 'POST') {
     if (problem) return back({ err: problem });
 
     setPassword(target.id, password);
+    if (target.id === me.id) {
+      // That bumped our own token version, invalidating the cookie this very
+      // request arrived with. Re-issue it, or changing your own password would
+      // bounce you to the sign-in screen mid-action.
+      const refreshed = getUser(me.id);
+      if (refreshed) {
+        Astro.cookies.set(
+          SESSION_COOKIE,
+          createSessionToken(refreshed),
+          sessionCookieOptions(Astro),
+        );
+      }
+    }
     recordLogin({
       userId: me.id,
       username: me.username,
@@ -80,13 +98,18 @@ if (Astro.request.method === 'POST') {
     return back({
       ok:
         target.id === me.id
-          ? `Your password is changed. Sign in again on your other devices.`
+          ? `Your password is changed. You are still signed in here; your other devices are not.`
           : `Changed the password for ${target.username}; they are signed out everywhere.`,
     });
   }
 
   if (action === 'role') {
     const makeAdmin = form.get('role') === 'admin';
+    // Removing your own admin access locks you out of the only page that could
+    // put it back, so another admin has to do it for you.
+    if (!makeAdmin && target.id === me.id) {
+      return back({ err: 'You cannot remove your own admin access — ask another admin to do it.' });
+    }
     // Removing the last admin would lock everyone out of this page for good.
     if (!makeAdmin && target.isAdmin && countAdmins() <= 1) {
       return back({ err: 'That is the only admin — make someone else an admin first.' });
@@ -207,6 +230,9 @@ const adminCount = countAdmins();
             <tbody>
               {users.map((u) => {
                 const lastAdmin = u.isAdmin && adminCount <= 1;
+                // Your own role is never yours to change, and the last admin's
+                // is nobody's - both would lock someone out of this page.
+                const roleFixed = u.id === me.id || lastAdmin;
                 return (
                   <tr>
                     <td>
@@ -217,11 +243,26 @@ const adminCount = countAdmins();
                       <form method="post" class="inline-form">
                         <input type="hidden" name="action" value="role" />
                         <input type="hidden" name="id" value={u.id} />
-                        <select name="role" disabled={lastAdmin} onchange="this.form.submit()">
+                        {/* No auto-submit on change: a scroll wheel over the
+                            dropdown would otherwise change a role silently. */}
+                        <select name="role" disabled={roleFixed}>
                           <option value="user" selected={!u.isAdmin}>Normal</option>
                           <option value="admin" selected={u.isAdmin}>Admin</option>
                         </select>
-                        <noscript><button class="btn btn-sm" type="submit">Set</button></noscript>
+                        <button
+                          class="btn btn-sm"
+                          type="submit"
+                          disabled={roleFixed}
+                          title={
+                            u.id === me.id
+                              ? 'Another admin has to change your own role'
+                              : lastAdmin
+                                ? 'The only admin cannot be demoted'
+                                : `Change ${u.username}'s role`
+                          }
+                        >
+                          Set
+                        </button>
                       </form>
                     </td>
                     <td><time datetime={u.createdAt}>{u.createdAt}</time></td>
