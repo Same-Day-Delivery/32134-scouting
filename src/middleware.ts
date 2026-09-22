@@ -1,5 +1,6 @@
 import { defineMiddleware } from 'astro:middleware';
 import { SESSION_COOKIE, ensureSeedAdmin, resolveSession } from './lib/auth';
+import { describeOriginMismatch, isCrossSiteWrite } from './lib/origin';
 
 // Everything else — the dashboard, the admin page and both API routes —
 // requires a session.
@@ -7,6 +8,16 @@ const PUBLIC_PATHS = new Set(['/login', '/favicon.svg']);
 
 export const onRequest = defineMiddleware(async (context, next) => {
   const { pathname } = context.url;
+
+  // Stands in for Astro's security.checkOrigin, which the config turns off
+  // because it cannot see past a TLS-terminating proxy. Logged when it fires:
+  // the usual cause is a proxy whose forwarded headers need a look.
+  if (isCrossSiteWrite(context.request, context.url)) {
+    console.warn(
+      `[csrf] refused ${context.request.method} ${pathname} — ${describeOriginMismatch(context.request, context.url)}`,
+    );
+    return new Response('Cross-site form submissions are forbidden', { status: 403 });
+  }
 
   // The very first request to a fresh database has to have somebody to log in
   // as, so the seed runs before anything is gated.

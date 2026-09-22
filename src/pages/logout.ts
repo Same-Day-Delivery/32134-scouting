@@ -4,7 +4,7 @@ import { SESSION_COOKIE, sessionCookieOptions } from '../lib/auth';
 export const prerender = false;
 
 // POST only: a GET would let any image or link tag log someone out.
-export const POST: APIRoute = ({ cookies, url, redirect }) => {
-  cookies.delete(SESSION_COOKIE, { ...sessionCookieOptions(url), maxAge: undefined });
+export const POST: APIRoute = ({ cookies, request, url, redirect }) => {
+  cookies.delete(SESSION_COOKIE, { ...sessionCookieOptions({ request, url }), maxAge: undefined });
   return redirect('/login', 303);
 };

@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { isHttps } from './origin';
 import {
   type User,
   authenticate,
@@ -111,11 +112,15 @@ export function resolveSession(token: string | undefined): User | null {
   return user;
 }
 
-/** Secure is conditional: the tailnet serves HTTPS, but `astro dev` is plain HTTP. */
-export const sessionCookieOptions = (url: URL) => ({
+/**
+ * Secure is conditional: the tailnet serves HTTPS, but `astro dev` is plain
+ * HTTP. It follows the browser's connection, not the container's, which behind
+ * a TLS-terminating proxy are not the same thing.
+ */
+export const sessionCookieOptions = (context: { request: Request; url: URL }) => ({
   httpOnly: true,
   sameSite: 'lax' as const,
-  secure: url.protocol === 'https:',
+  secure: isHttps(context.request, context.url),
   path: '/',
   maxAge: SESSION_MAX_AGE,
 });

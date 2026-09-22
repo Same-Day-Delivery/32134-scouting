@@ -37,7 +37,7 @@ if (Astro.request.method === 'POST') {
   });
 
   if (user) {
-    Astro.cookies.set(SESSION_COOKIE, createSessionToken(user), sessionCookieOptions(Astro.url));
+    Astro.cookies.set(SESSION_COOKIE, createSessionToken(user), sessionCookieOptions(Astro));
     return Astro.redirect(next, 303);
   }
   error = 'Wrong username or password.';

@@ -6,6 +6,11 @@ import node from '@astrojs/node';
 export default defineConfig({
   output: 'server',
   adapter: node({ mode: 'standalone' }),
+  // Astro's own origin check builds the expected origin from the container's
+  // socket, so behind a TLS-terminating proxy it compares the browser's
+  // https:// Origin against its own http:// and refuses every form post.
+  // src/lib/origin.ts does the same check against the forwarded host instead.
+  security: { checkOrigin: false },
   // Listen on every interface so phones and laptops on the same network can
   // reach the dev server, not just localhost.
   server: { host: true },

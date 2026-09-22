@@ -70,6 +70,26 @@ Behind `tailscale serve` the client IP comes from `X-Forwarded-For`, which is
 trustworthy here because compose binds the port to loopback, so nothing but
 that proxy can reach it.
 
+## Running behind a proxy
+
+`tailscale serve` terminates TLS and forwards plain HTTP, but the Node adapter
+decides a request's protocol from its own socket — so the container thinks the
+site is HTTP while the browser knows it is HTTPS. Left alone that breaks two
+things: Astro's `security.checkOrigin` compares the browser's `https://` Origin
+against its own `http://` and refuses **every** form post with *"Cross-site POST
+form submissions are forbidden"*, and session cookies lose their `Secure` flag.
+
+So `security.checkOrigin` is off in `astro.config.mjs`, and `src/lib/origin.ts`
+does the same job against `X-Forwarded-Proto` and `X-Forwarded-Host`: it
+compares hosts rather than whole origins, so terminating TLS upstream is no
+longer a mismatch, and cookies follow the browser's protocol rather than the
+container's. Cross-site posts are still refused, and each refusal is logged with
+the headers that caused it — check `docker compose logs` if one surprises you.
+
+Trusting those headers is safe because compose binds the port to loopback. If
+you ever publish the port directly, set `SITE_HOST` to the hostname people use
+and it will be believed instead of any header.
+
 ## Tabs
 
 | Tab | What it shows |
@@ -144,6 +164,7 @@ src/
 │   ├── scoring-config.ts  categories and their default point values
 │   ├── auth.ts            sessions, sign-in, first-admin seeding
 │   ├── users.ts           accounts, password hashing, sign-in log
+│   ├── origin.ts          proxy-aware origin check + HTTPS detection
 │   └── request.ts         client IP and user agent, proxy-aware
 ├── middleware.ts          gates every route; /admin needs an admin
 ├── pages/
